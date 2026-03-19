@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import CaseForm from "@/components/CaseForm";
 import PictureViewer from "@/components/PictureViewer";
 import { useLocalStorage } from "@/hooks/uselocalStorage";
@@ -17,7 +17,10 @@ export default function Home() {
   const [editingScreenshots, setEditingScreenshots] = useState<string[]>([]);
   const [isEditPasted, setIsEditPasted] = useState(false);
   const [exportStatus, setExportStatus] = useState<"idle" | "ok" | "error">("idle");
+  const [importStatus, setImportStatus] = useState<"idle" | "ok" | "error">("idle");
+  const [lastImportCount, setLastImportCount] = useState(0);
   const [viewer, setViewer] = useState<{ caseId: string; index: number } | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const readFileAsDataURL = (file: File) =>
     new Promise<string>((resolve, reject) => {
@@ -236,10 +239,104 @@ export default function Home() {
       window.URL.revokeObjectURL(url);
 
       setExportStatus("ok");
+      setImportStatus("idle");
       window.setTimeout(() => setExportStatus("idle"), 2200);
     } catch {
       setExportStatus("error");
+      setImportStatus("idle");
       window.setTimeout(() => setExportStatus("idle"), 2600);
+    }
+  };
+
+  const isSAPCase = (value: unknown): value is SAPCase => {
+    if (!value || typeof value !== "object") {
+      return false;
+    }
+
+    const candidate = value as Partial<SAPCase>;
+    return (
+      typeof candidate.id === "string" &&
+      typeof candidate.title === "string" &&
+      typeof candidate.requirement === "string" &&
+      typeof candidate.steps === "string" &&
+      typeof candidate.createdAt === "number"
+    );
+  };
+
+  const normalizeImportedCase = (wikiCase: SAPCase): SAPCase => {
+    const normalizedTCodes =
+      wikiCase.tCodes && wikiCase.tCodes.length > 0
+        ? wikiCase.tCodes
+        : wikiCase.tCode
+          ? [wikiCase.tCode]
+          : [];
+
+    const normalizedScreenshots =
+      wikiCase.screenshots && wikiCase.screenshots.length > 0
+        ? wikiCase.screenshots
+        : wikiCase.screenshot
+          ? [wikiCase.screenshot]
+          : [];
+
+    return {
+      ...wikiCase,
+      tCode: normalizedTCodes[0] ?? wikiCase.tCode,
+      tCodes: normalizedTCodes,
+      screenshot: normalizedScreenshots[0],
+      screenshots: normalizedScreenshots,
+    };
+  };
+
+  const handleImportData = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const fileText = await file.text();
+      const parsed = JSON.parse(fileText) as unknown;
+
+      const imported = Array.isArray(parsed)
+        ? parsed
+        : parsed && typeof parsed === "object" && Array.isArray((parsed as { cases?: unknown }).cases)
+          ? (parsed as { cases: unknown[] }).cases
+          : null;
+
+      if (!imported) {
+        throw new Error("Invalid backup file format.");
+      }
+
+      const validCases = imported.filter(isSAPCase).map(normalizeImportedCase);
+      if (validCases.length === 0) {
+        throw new Error("No valid case records found in file.");
+      }
+
+      const shouldReplace = window.confirm(
+        `Import ${validCases.length} case(s)? This will replace your current local wiki data on this browser.`,
+      );
+      if (!shouldReplace) {
+        e.target.value = "";
+        return;
+      }
+
+      setCases(validCases);
+      setExpandedCaseId(null);
+      setEditingCaseId(null);
+      setEditingSteps("");
+      setEditingScreenshots([]);
+      setViewer(null);
+
+      setLastImportCount(validCases.length);
+      setImportStatus("ok");
+      setExportStatus("idle");
+      window.setTimeout(() => setImportStatus("idle"), 2600);
+    } catch {
+      setImportStatus("error");
+      setExportStatus("idle");
+      window.setTimeout(() => setImportStatus("idle"), 2800);
+    } finally {
+      e.target.value = "";
     }
   };
 
@@ -267,6 +364,15 @@ export default function Home() {
             </p>
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
+              <input
+                ref={importInputRef}
+                type="file"
+                accept="application/json,.json"
+                onChange={handleImportData}
+                className="sr-only"
+                aria-label="Import backup file"
+              />
+
               <button
                 type="button"
                 onClick={handleExportData}
@@ -274,10 +380,21 @@ export default function Home() {
               >
                 Export Backup
               </button>
+
+              <button
+                type="button"
+                onClick={() => importInputRef.current?.click()}
+                className="h-11 rounded-xl border-2 border-slate-300 bg-white/90 px-4 text-sm font-semibold text-slate-800 transition hover:bg-slate-100"
+              >
+                Import Backup
+              </button>
+
               <p className="text-xs text-slate-600" role="status" aria-live="polite">
                 {exportStatus === "ok" && "Backup downloaded as JSON."}
                 {exportStatus === "error" && "Export failed. Try again."}
-                {exportStatus === "idle" && "Local-only export. Nothing is uploaded."}
+                {importStatus === "ok" && `Imported ${lastImportCount} case(s) into local wiki.`}
+                {importStatus === "error" && "Import failed. Use a valid backup JSON file."}
+                {exportStatus === "idle" && importStatus === "idle" && "Local-only import/export. Nothing is uploaded."}
               </p>
             </div>
           </div>
