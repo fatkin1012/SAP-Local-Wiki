@@ -21,14 +21,18 @@ export default function PictureViewer({
 }: PictureViewerProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [drawEnabled, setDrawEnabled] = useState(false);
+  const [eraseEnabled, setEraseEnabled] = useState(false);
   const [brushColor, setBrushColor] = useState("#ff3344");
   const [brushSize, setBrushSize] = useState(4);
+  const [undoCount, setUndoCount] = useState(0);
   const [saving, setSaving] = useState(false);
 
   const imageRef = useRef<HTMLImageElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
+  const hasDrawnInStrokeRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const historyRef = useRef<string[]>([]);
 
   const currentImage = useMemo(() => images[currentIndex], [currentIndex, images]);
 
@@ -36,6 +40,7 @@ export default function PictureViewer({
     if (isOpen) {
       setCurrentIndex(initialIndex);
       setDrawEnabled(false);
+      setEraseEnabled(false);
     }
   }, [initialIndex, isOpen]);
 
@@ -60,6 +65,21 @@ export default function PictureViewer({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [images.length, isOpen, onClose]);
 
+  const saveHistorySnapshot = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const snapshot = canvas.toDataURL("image/png");
+    if (historyRef.current[historyRef.current.length - 1] === snapshot) {
+      return;
+    }
+
+    historyRef.current = [...historyRef.current, snapshot];
+    setUndoCount(historyRef.current.length - 1);
+  };
+
   const syncCanvasSize = () => {
     const image = imageRef.current;
     const canvas = canvasRef.current;
@@ -74,6 +94,9 @@ export default function PictureViewer({
       return;
     }
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    historyRef.current = [canvas.toDataURL("image/png")];
+    setUndoCount(0);
   };
 
   useEffect(() => {
@@ -97,7 +120,8 @@ export default function PictureViewer({
       return;
     }
 
-    ctx.strokeStyle = brushColor;
+    ctx.globalCompositeOperation = eraseEnabled ? "destination-out" : "source-over";
+    ctx.strokeStyle = eraseEnabled ? "rgba(0, 0, 0, 1)" : brushColor;
     ctx.lineWidth = brushSize;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
@@ -127,7 +151,9 @@ export default function PictureViewer({
 
     const point = getCanvasPoint(e);
     drawingRef.current = true;
+    hasDrawnInStrokeRef.current = true;
     lastPointRef.current = point;
+    drawLine(point, point);
     e.currentTarget.setPointerCapture(e.pointerId);
   };
 
@@ -138,15 +164,47 @@ export default function PictureViewer({
 
     const point = getCanvasPoint(e);
     drawLine(lastPointRef.current, point);
+    hasDrawnInStrokeRef.current = true;
     lastPointRef.current = point;
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (drawingRef.current && hasDrawnInStrokeRef.current) {
+      saveHistorySnapshot();
+    }
+
     drawingRef.current = false;
+    hasDrawnInStrokeRef.current = false;
     lastPointRef.current = null;
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
+  };
+
+  const handleUndo = () => {
+    const canvas = canvasRef.current;
+    if (!canvas || historyRef.current.length <= 1) {
+      return;
+    }
+
+    historyRef.current = historyRef.current.slice(0, -1);
+    const previousSnapshot = historyRef.current[historyRef.current.length - 1];
+    if (!previousSnapshot) {
+      return;
+    }
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return;
+    }
+
+    const img = new Image();
+    img.onload = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      setUndoCount(historyRef.current.length - 1);
+    };
+    img.src = previousSnapshot;
   };
 
   const handleClearMarks = () => {
@@ -161,6 +219,7 @@ export default function PictureViewer({
     }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    saveHistorySnapshot();
   };
 
   const exportAnnotatedImage = async () => {
@@ -199,6 +258,7 @@ export default function PictureViewer({
       onSaveAnnotated(merged, currentIndex);
       handleClearMarks();
       setDrawEnabled(false);
+      setEraseEnabled(false);
     } finally {
       setSaving(false);
     }
@@ -251,6 +311,21 @@ export default function PictureViewer({
             {drawEnabled ? "Drawing On" : "Enable Draw"}
           </button>
 
+          <button
+            type="button"
+            onClick={() => {
+              setEraseEnabled((prev) => !prev);
+              if (!drawEnabled) {
+                setDrawEnabled(true);
+              }
+            }}
+            className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${
+              eraseEnabled ? "bg-amber-500 text-white" : "border border-white/25 text-amber-100"
+            }`}
+          >
+            {eraseEnabled ? "Eraser On" : "Eraser"}
+          </button>
+
           <label className="text-xs text-white/80">Color</label>
           <input
             type="color"
@@ -272,6 +347,15 @@ export default function PictureViewer({
             onChange={(e) => setBrushSize(Number(e.target.value))}
             className="accent-emerald-400"
           />
+
+          <button
+            type="button"
+            onClick={handleUndo}
+            disabled={undoCount === 0}
+            className="rounded-lg border border-white/25 px-3 py-1 text-xs font-semibold hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Undo
+          </button>
 
           <button
             type="button"
@@ -303,7 +387,7 @@ export default function PictureViewer({
             />
             <canvas
               ref={canvasRef}
-              className={`absolute inset-0 ${drawEnabled ? "cursor-crosshair" : "pointer-events-none"}`}
+              className={`absolute inset-0 ${drawEnabled ? eraseEnabled ? "cursor-cell" : "cursor-crosshair" : "pointer-events-none"}`}
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
