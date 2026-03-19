@@ -16,6 +16,7 @@ export default function Home() {
   const [editingSteps, setEditingSteps] = useState("");
   const [editingScreenshots, setEditingScreenshots] = useState<string[]>([]);
   const [isEditPasted, setIsEditPasted] = useState(false);
+  const [exportStatus, setExportStatus] = useState<"idle" | "ok" | "error">("idle");
   const [viewer, setViewer] = useState<{ caseId: string; index: number } | null>(null);
 
   const readFileAsDataURL = (file: File) =>
@@ -212,6 +213,36 @@ export default function Home() {
     );
   };
 
+  const handleExportData = () => {
+    try {
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        schemaVersion: 1,
+        app: "sap-playbook",
+        cases,
+      };
+
+      const json = JSON.stringify(payload, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = window.URL.createObjectURL(blob);
+      const dateStamp = new Date().toISOString().slice(0, 10);
+
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `sap-playbook-backup-${dateStamp}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+
+      setExportStatus("ok");
+      window.setTimeout(() => setExportStatus("idle"), 2200);
+    } catch {
+      setExportStatus("error");
+      window.setTimeout(() => setExportStatus("idle"), 2600);
+    }
+  };
+
   return (
     <div className="playful-bg min-h-dvh px-4 py-6 md:px-8 md:py-10">
       <main className="mx-auto w-full max-w-6xl space-y-5">
@@ -234,6 +265,21 @@ export default function Home() {
               Store SAP case solutions, search instantly by T-Code or keyword, and turn today&apos;s issue
               into tomorrow&apos;s shortcut.
             </p>
+
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleExportData}
+                className="h-11 rounded-xl border-2 border-emerald-300 bg-white/90 px-4 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
+              >
+                Export Backup
+              </button>
+              <p className="text-xs text-slate-600" role="status" aria-live="polite">
+                {exportStatus === "ok" && "Backup downloaded as JSON."}
+                {exportStatus === "error" && "Export failed. Try again."}
+                {exportStatus === "idle" && "Local-only export. Nothing is uploaded."}
+              </p>
+            </div>
           </div>
         </header>
 
