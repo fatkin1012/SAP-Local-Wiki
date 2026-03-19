@@ -15,6 +15,11 @@ const nunito = Nunito({
 export const metadata: Metadata = {
   title: "Local Searchable Wiki",
   description: "A playful, searchable SAP case wiki for daily problem-solving.",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

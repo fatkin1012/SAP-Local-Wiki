@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import CaseForm from "@/components/CaseForm";
 import PictureViewer from "@/components/PictureViewer";
+import PWAInstallPrompt from "@/components/PWAInstallPrompt";
 import { useLocalStorage } from "@/hooks/uselocalStorage";
 import { SAPCase } from "@/types";
 
@@ -388,6 +389,8 @@ export default function Home() {
               >
                 Import Backup
               </button>
+
+              <PWAInstallPrompt />
 
               <p className="text-xs text-slate-600" role="status" aria-live="polite">
                 {exportStatus === "ok" && "Backup downloaded as JSON."}
