@@ -44,6 +44,7 @@ This makes it easy to move your wiki data to another machine manually.
 ### Development mode
 
 ```bash
+npm.cmd ci
 npm.cmd run dev
 ```
 
@@ -64,6 +65,12 @@ npm.cmd run start
 ```
 
 Use this mode when you do not want to run dev each time.
+
+### Type check
+
+```bash
+npm.cmd run typecheck
+```
 
 ## PWA Install Flow
 

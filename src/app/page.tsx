@@ -194,7 +194,7 @@ export default function Home() {
     setViewer(null);
   };
 
-  const handleSaveMarkedCopy = (annotatedImage: string, _sourceIndex: number) => {
+  const handleSaveMarkedCopy = (annotatedImage: string) => {
     if (!viewer) {
       return;
     }

@@ -16,12 +16,6 @@ export default function PWAInstallPrompt() {
       return;
     }
 
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {
-        // Keep app functional even if SW registration fails.
-      });
-    }
-
     const onBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
       setDeferredPrompt(event as BeforeInstallPromptEvent);
